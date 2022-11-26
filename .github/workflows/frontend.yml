@@ -11,27 +11,58 @@ jobs:
 
     steps:
 
+      # Sprawdź czy workflow ma poprawny dostęp do repo
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Buildx set-up
+      # Konfiguracja buildx
+      - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v2
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v1 
+      # Dodanie emulatora QEMU dla wielu architektur
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+        
+      # Umożliwienie manipulowanie cache pomiędzy uruchomieniami kolejnymi sesjami GitHub Actions
+      - name: Cache Primes
+        id: cache-primes
+        uses: actions/cache@v3
+        with:
+          path: prime-numbers
+          key: ${{ runner.os }}-primes
+
+      - name: Generate Prime Numbers
+        if: steps.cache-primes.outputs.cache-hit != 'true'
+        run: /generate-primes.sh -d prime-numbers
+
+      - name: Use Prime Numbers
+        run: /primes.sh -d prime-numbers
+
+      # Logowanie na konto DockerHub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-
+      # Zbudowanie i wypchnięcie obrazów na DockerHub registry
       - name: Build and push
         id: docker_build
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
+          cache-from: type=local,src=prime-numbers
+          cache-to: type=local,dest=prime-numbers-new,mode=max
+          platforms: linux/arm64,linux/amd64,linux/ppc64le
           context: ./
           file: ./dockerfile.v1
           push: true
           tags: |
-            spg51/lab:ghfront1
+            evcpollub/lab7:zad
+
+      # Cykliczne aktualizowanie cache'a
+      - name: Move cache
+        run: |
+          rm -rf prime-numbers
+          mv prime-numbers-new prime-numbers
           
